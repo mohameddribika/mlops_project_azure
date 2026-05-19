@@ -1,0 +1,30 @@
+# Local Docker Compose for testing the container before pushing to Azure.
+#
+# Usage:
+#   docker compose up --build      # build + start
+#   docker compose down            # stop + remove
+#
+# Then visit http://127.0.0.1:5001 (the host-side port).
+# Port 5001 on the host is mapped to 5000 inside the container — this
+# avoids conflicts with macOS AirPlay Receiver and with a locally-running
+# MLflow UI on port 5000.
+
+services:
+  mlflow-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mlflow-telco-churn:local
+    container_name: mlflow-telco-churn
+    ports:
+      - "5001:5000"
+    restart: unless-stopped
+    environment:
+      MLFLOW_BACKEND_STORE_URI: sqlite:////app/mlflow.db
+      MLFLOW_ARTIFACT_ROOT: /app/mlruns
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
