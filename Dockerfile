@@ -66,4 +66,6 @@ CMD ["mlflow", "server", \
      "--backend-store-uri", "sqlite:////app/mlflow.db", \
      "--default-artifact-root", "/app/mlruns", \
      "--host", "0.0.0.0", \
-     "--port", "5000"]
+     "--port", "5000", \
+     "--allowed-hosts", "*", \
+     "--cors-allowed-origins", "*"]
