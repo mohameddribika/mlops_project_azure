@@ -17,7 +17,7 @@ services:
     image: mlflow-telco-churn:local
     container_name: mlflow-telco-churn
     ports:
-      - "5001:5000"
+      - "5002:5000"
     restart: unless-stopped
     environment:
       MLFLOW_BACKEND_STORE_URI: sqlite:////app/mlflow.db
