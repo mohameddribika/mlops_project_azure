@@ -117,7 +117,7 @@ Full discussion in [`reports/project_report.pdf`](reports/project_report.pdf).
 
 ```
 PRJ-mohameddribika-2280197/
-├── src/                       # the five lifecycle modules
+├── src/                       # lifecycle stage modules + shared helpers
 │   ├── data_loader.py         # raw CSV → cleaned train/val/test splits
 │   ├── pipeline.py            # sklearn Pipeline: preprocessor + estimator
 │   ├── evaluation.py          # accuracy / precision / recall / F1 / ROC-AUC
