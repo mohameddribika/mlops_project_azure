@@ -1,103 +1,183 @@
-# Telco Churn — Azure-deployed MLflow Lifecycle (variant)
+# MLflow Lifecycle Management — Telco Customer Churn
 
-This is the **Azure-deployed variant** of my AIN-3009 MLOps term project.
-The Python code is identical to the local submission
-([mohameddribika/mlops_project](https://github.com/mohameddribika/mlops_project));
-the only addition is a Docker + Azure Container Apps deployment layer so
-the same MLflow tracking UI can run on a public HTTPS URL.
+End-to-end machine-learning lifecycle management built on **MLflow**, covering all five
+lifecycle stages required by the brief — experiment tracking, model training & tuning,
+model deployment, performance monitoring, and the model registry — applied to predicting
+customer churn on the IBM Telco dataset.
 
-| Variant | Repository | What it shows |
-| --- | --- | --- |
-| Local | [mlops_project](https://github.com/mohameddribika/mlops_project) | The graded submission. MLflow tracking server on localhost. |
-| Azure | this repo | The same project, containerised, deployable to Azure Container Apps in one `az containerapp up` command. |
+The project ships as a **single, self-contained Docker image** that bakes the full
+lifecycle in at build time, so the MLflow UI is populated and demo-ready the moment the
+container starts. The same image runs locally with `docker compose` or deploys to
+**Azure Container Apps** in one command for a public HTTPS URL.
 
-The brief allows "local machine **or** cloud environment" for the MLflow
-setup. The local version satisfies the requirement; this Azure variant
-demonstrates the cloud option as well.
+> **Course:** AIN-3009 MLOps — Bahçeşehir University
+> **Author:** Mohamed Dribika (2280197)
+> **Best test ROC-AUC:** 0.8457 (tuned Gradient Boosting)
 
 ---
 
-## Quick start — local Docker (no Azure account needed)
+## Lifecycle objectives → where they live in the code
+
+| # | Objective                | Module                         | What it does                                                                                                  |
+|---|--------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------|
+| 1 | Experiment tracking      | [`src/train.py`](src/train.py) | Logs parameters, train/val/test metrics, ROC + confusion-matrix plots, and the packaged model to MLflow      |
+| 2 | Model training & tuning  | [`src/train.py`](src/train.py), [`src/tune.py`](src/tune.py) | Three baseline classifiers (LogReg, Random Forest, Gradient Boosting) plus Hyperopt TPE search with nested runs |
+| 3 | Model deployment         | [`Dockerfile`](Dockerfile), [`azure/`](azure/), [`scripts/start_mlflow_serve.sh`](scripts/start_mlflow_serve.sh) | `mlflow models serve` from the registry alias; Docker image deployable to Azure Container Apps                |
+| 4 | Performance monitoring   | [`src/monitor.py`](src/monitor.py) | PSI + KS + Evidently drift reports against simulated production batches (clean / feature drift / concept drift) |
+| 5 | Model registry           | [`src/registry.py`](src/registry.py) | Auto-registers the best run, transitions versions through `@staging` → `@production` aliases                 |
+
+---
+
+## Quick start — local Docker
+
+Prereq: Docker Desktop installed and running.
 
 ```bash
-docker compose up --build           # build the image and start it
-# open http://127.0.0.1:5001 in a browser
-docker compose down                 # stop everything
+docker compose up --build
+# open http://127.0.0.1:5002 in a browser
+docker compose down
 ```
 
-The image bakes the full lifecycle in at build time — training, Hyperopt
-tuning, registry promotion, and a monitoring batch — so the UI is
-populated and ready to demo the moment the container is reachable.
+The first build takes ~4 minutes (it runs `train → tune → registry → monitor` inside the
+image). Subsequent runs are seconds — the populated MLflow store ships baked into the
+image layer.
+
+You will see:
+- Two experiments — `telco_churn` (training & tuning runs) and `telco_churn_monitoring`
+  (drift batches).
+- A registered model `telco-churn-classifier` with `@staging` and `@production` aliases.
+- ROC + confusion-matrix plots and Evidently drift HTMLs as run artifacts.
 
 ---
 
-## Quick start — Azure Container Apps
+## Quick start — Azure Container Apps (public HTTPS URL)
 
-See [`azure/README.md`](azure/README.md) for full prerequisites and the
-single-command deploy.
-
-Short version, once you have the Azure CLI installed and `az login` done:
+See [`azure/README.md`](azure/README.md) for the full prerequisites and walkthrough.
+Short version:
 
 ```bash
-az group create --name mlops-telco-rg --location westeurope
-az containerapp env create --name mlops-telco-env --resource-group mlops-telco-rg --location westeurope
+az group create --name mlops-telco-rg --location germanywestcentral
+az containerapp env create \
+    --name mlops-telco-env --resource-group mlops-telco-rg \
+    --location germanywestcentral --logs-destination none
+
 az containerapp up \
-    --resource-group mlops-telco-rg \
-    --environment mlops-telco-env \
-    --name mlflow-telco-ui \
-    --location westeurope \
-    --source . \
-    --target-port 5000 \
-    --ingress external
+    --resource-group mlops-telco-rg --environment mlops-telco-env \
+    --name mlflow-telco-ui --location germanywestcentral \
+    --source . --target-port 5000 --ingress external
 ```
 
-When the command finishes it prints a public HTTPS URL — open it and you
-see the same populated MLflow UI you have locally.
+When the command finishes it prints a public HTTPS URL — the same MLflow UI you have
+locally, but reachable from anywhere.
+
+---
+
+## Results summary
+
+### Baseline runs (Objective 1)
+
+| Model                       | Test ROC-AUC | Test F1 | Test Accuracy |
+|-----------------------------|--------------|---------|---------------|
+| Logistic Regression         | 0.8426       | 0.6049  | 0.8062        |
+| Gradient Boosting           | 0.8390       | 0.5710  | 0.7963        |
+| Random Forest               | 0.8223       | 0.5392  | 0.7828        |
+
+### Tuned best (Objective 2)
+
+20-trial Hyperopt TPE search over Gradient Boosting:
+
+```
+learning_rate     = 0.0180
+max_depth         = 5
+min_samples_leaf  = 18
+min_samples_split = 4
+n_estimators      = 225
+subsample         = 0.627
+```
+
+Best val ROC-AUC = 0.8672, **best test ROC-AUC = 0.8457**.
+
+### Drift monitoring (Objective 4)
+
+| Scenario        | max PSI | drift_alert | prod ROC-AUC | prod F1 |
+|-----------------|---------|-------------|--------------|---------|
+| clean           | 0.023   | False       | 0.834        | 0.551   |
+| feature drift   | 1.488   | **True**    | 0.843        | 0.617   |
+| concept drift   | 0.016   | False       | **0.654**    | 0.445   |
+
+Concept drift is the key insight — feature distributions are unchanged, PSI doesn't fire,
+yet ROC-AUC collapses. Production monitoring must combine input-distribution checks
+**and** performance metrics on labelled samples.
+
+Full discussion in [`reports/project_report.pdf`](reports/project_report.pdf).
 
 ---
 
 ## Project layout
 
 ```
-PRJ-mohameddribika-2280197-azure/
-├── src/                     # unchanged: data_loader, train, tune,
-│                            # registry, monitor, evaluation, pipeline,
-│                            # mlflow_utils, config
-├── scripts/                 # local MLflow UI / serve launchers (unchanged)
-├── data/raw/                # IBM Telco Customer Churn dataset
-├── artifacts/               # ROC + confusion-matrix plots
-├── reports/                 # deliverables (PDF, DOCX, PPTX, drift HTMLs)
+PRJ-mohameddribika-2280197/
+├── src/                       # the five lifecycle modules
+│   ├── data_loader.py         # raw CSV → cleaned train/val/test splits
+│   ├── pipeline.py            # sklearn Pipeline: preprocessor + estimator
+│   ├── evaluation.py          # accuracy / precision / recall / F1 / ROC-AUC
+│   ├── train.py               # baseline runs (Objective 1, 2)
+│   ├── tune.py                # Hyperopt TPE search (Objective 2)
+│   ├── registry.py            # register-best, staging→production transitions (Objective 5)
+│   ├── monitor.py             # PSI / KS / Evidently drift batches (Objective 4)
+│   └── mlflow_utils.py        # tracking URI + experiment helpers
+├── scripts/                   # local MLflow UI / serve launchers
+├── data/raw/                  # IBM Telco Customer Churn dataset
+├── artifacts/                 # ROC + confusion-matrix plots
+├── reports/                   # PDF + DOCX report, PPTX presentation, drift HTMLs
 ├── azure/
-│   └── README.md            # step-by-step Azure deploy guide
-├── Dockerfile               # containerises the project + bakes the lifecycle
-├── docker-compose.yml       # for local Docker testing
-├── .dockerignore
+│   └── README.md              # Azure Container Apps deploy guide
+├── Dockerfile                 # bakes the full lifecycle at build time
+├── docker-compose.yml         # local Docker run
 ├── requirements.txt
-└── README.md                # this file
+└── README.md
 ```
 
 ---
 
-## What is the same as the local submission
+## Tech stack
 
-All five lifecycle objectives, the same source code, the same dataset,
-the same metrics, and the same registered model
-`telco-churn-classifier` with `@staging` and `@production` aliases.
+| Concern          | Tool                                                     |
+|------------------|----------------------------------------------------------|
+| Tracking server  | MLflow 3.12 (SQLite backend store, local artifact root)  |
+| ML framework     | scikit-learn 1.8 (`Pipeline` + `ColumnTransformer`)      |
+| Tuning           | Hyperopt 0.2.7 (Tree-structured Parzen Estimator)        |
+| Model packaging  | `mlflow.sklearn.log_model` with inferred signature       |
+| Serving          | `mlflow models serve` against `models:/...@production`   |
+| Drift detection  | Population Stability Index, KS test, Evidently HTML      |
+| Containerisation | Docker (Python 3.12-slim)                                |
+| Cloud deployment | Azure Container Apps (one-command deploy)                |
 
-## What is new in this variant
+---
 
-- **Dockerfile** that runs `train → tune → registry → monitor` at build
-  time, so the deployed container starts with a populated tracking store.
-- **`docker-compose.yml`** for testing the image locally before deploying.
-- **`azure/README.md`** documenting the single-command Container Apps
-  deploy.
+## Reproducing the run-set
 
-## What I deliberately did not do
+The same commands the Dockerfile uses, so you can run them outside the container:
 
-- Externalise the backend store to Azure Database for PostgreSQL.
-- Externalise the artifact root to Azure Blob Storage.
-- Add Azure AD authentication in front of the ingress.
+```bash
+pip install -r requirements.txt
+python -m src.train                                      # all 3 baselines
+python -m src.tune --model gradient_boosting --max-evals 20
+python -m src.registry register-best
+python -m src.registry transition 1 staging
+python -m src.registry transition 1 production
+python -m src.monitor                                     # 3 drift scenarios
+```
 
-These are appropriate for a real production deployment but unnecessary
-for the term-project demo. The Architecture notes section in
-`azure/README.md` lays out what would change for a production-grade setup.
+Then `bash scripts/start_mlflow_ui.sh` to open the UI at `http://127.0.0.1:5000`.
+
+Random seeds are fixed at `RANDOM_STATE = 42` (splits + estimators) and `seed=7`
+(monitoring batches) — metrics in the results table above are reproducible.
+
+---
+
+## Deliverables (per brief)
+
+- **Code:** this repository
+- **Project report:** [`reports/project_report.pdf`](reports/project_report.pdf) (+ DOCX source)
+- **Presentation:** [`reports/presentation.pptx`](reports/presentation.pptx)

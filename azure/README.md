@@ -1,7 +1,9 @@
 # Deploying to Azure Container Apps
 
-This is the Azure variant of the MLflow Telco Churn project. The code is
-identical to the local submission; only the deployment story is different.
+Step-by-step guide for putting the MLflow Telco Churn project on a public
+HTTPS URL. The project itself is unchanged — Azure Container Apps just
+runs the same Docker image documented in the top-level [`README.md`](../README.md)
+and [`Dockerfile`](../Dockerfile).
 
 The deployment target is **Azure Container Apps** — a managed,
 serverless-style container platform that scales to zero when idle, exposes
