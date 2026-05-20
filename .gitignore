@@ -23,6 +23,9 @@ data/processed/
 .DS_Store
 Thumbs.db
 
+# Microsoft Office lock files (created while a .docx/.pptx/.xlsx is open).
+~$*
+
 # Editors.
 .vscode/
 .idea/
